@@ -50,7 +50,7 @@ def preprocess_bus_data(frame):
     return frame
 
 
-def create_speed_curve_plot_data(frame, column_name, diff):
+def resample(frame, column_name, diff):
     frame = frame.set_index('timestamp')
     frame = frame.loc[~frame.index.duplicated(), :]
     frame.flags.allows_duplicate_labels = False
@@ -59,7 +59,6 @@ def create_speed_curve_plot_data(frame, column_name, diff):
     frame['count'] = 1
 
     frame = frame.resample(str_).agg({
-        'count': np.sum,
         column_name: np.mean,
     })
     frame = frame.reset_index()
@@ -68,7 +67,31 @@ def create_speed_curve_plot_data(frame, column_name, diff):
 
 
 def two_line_plot(bus_frame, cam_frame):
+    font = {'family': 'serif', 'size': 20}
     plt.plot(cam_frame['timestamp'], cam_frame['avg_speed'], label='cam')
     plt.plot(bus_frame['timestamp'], bus_frame['velocity'], label='bus')
+    plt.xlabel("time", fontdict=font)
+    plt.ylabel("km/h", fontdict=font)
+    plt.ylim(0,55)
     plt.legend()
     plt.show()
+
+
+def get_cam_column(column_name, frame, metric):
+    frame = frame[(frame['measurement_configuration.metric_type'] == metric)]
+    frame[column_name] = frame['value']
+    frame = frame.drop(
+        ['value', 'measurement_configuration.entity.entity_id', 'measurement_configuration.entity.entity_type',
+         'measurement_configuration.metric_type'], axis=1)
+    return frame
+
+
+def create_joined_cam_data(frame, day):
+    cam_speed = get_cam_column('avg_speed', day_filter(frame, day), 'AVG_SPEED')
+    cam_flow = get_cam_column('total_flow', day_filter(frame, day), 'TOTAL_FLOW')
+    cam_speed_resampled = resample(cam_speed, 'avg_speed', 15)
+    cam_flow_resampled = resample(cam_flow, 'total_flow', 30)
+    res = cam_speed_resampled.set_index('timestamp').join(cam_flow_resampled.set_index('timestamp'))
+    res = res.reset_index()
+    res = res.sort_values(by='timestamp')
+    return res
